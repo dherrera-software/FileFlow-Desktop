@@ -1,0 +1,126 @@
+/* ==========================================================================
+   FileFlow Design Tokens (Source of Truth)
+   Theme: Slate Cool (Dark Default) & Slate White (Light Equivalent)
+   Accent: Hyper Cyan (#22d3ee in Dark, #0284c7 in Light for WCAG AA)
+   Typography: Geist (UI) + Geist Mono (Technical metadata)
+   ========================================================================== */
+
+:root {
+  color-scheme: dark;
+
+  /* Typography */
+  --font-ui: "Geist", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  --font-mono: "Geist Mono", ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+
+  /* Dark Theme Palette (Slate Cool - Default) */
+  --color-canvas: #0d1117;
+  --color-surface-subtle: #11161d;
+  --color-surface: #161b22;
+  --color-surface-raised: #1f252e;
+  --color-surface-overlay: #28303b;
+  --color-surface-sunken: #090d12;
+
+  --color-border-subtle: rgba(255, 255, 255, 0.05);
+  --color-border: rgba(255, 255, 255, 0.09);
+  --color-border-strong: rgba(255, 255, 255, 0.16);
+
+  --color-text-primary: #f0f6fc;
+  --color-text-secondary: #8b949e;
+  --color-text-muted: #6e7681;
+
+  /* Primary Accent: Hyper Cyan */
+  --color-accent: #22d3ee;
+  --color-accent-hover: #67e8f9;
+  --color-accent-active: #06b6d4;
+  --color-accent-soft: rgba(34, 211, 238, 0.12);
+  --color-accent-border: rgba(34, 211, 238, 0.35);
+  --color-accent-glow: rgba(34, 211, 238, 0.20);
+  --color-accent-foreground: #082f49;
+
+  /* Semantic Tones */
+  --color-danger: #f87171;
+  --color-danger-soft: rgba(248, 113, 113, 0.12);
+  --color-danger-border: rgba(248, 113, 113, 0.30);
+  --color-success: #34d399;
+  --color-success-soft: rgba(52, 211, 153, 0.12);
+  --color-warning: #fbbf24;
+  --color-warning-soft: rgba(251, 191, 36, 0.12);
+  --color-info: #60a5fa;
+  --color-info-soft: rgba(96, 165, 250, 0.12);
+
+  /* Radius & Shadows */
+  --radius-sm: 8px;
+  --radius-md: 12px;
+  --radius-lg: 18px;
+  --radius-full: 9999px;
+
+  --shadow-sm: 0 1px 2px 0 rgba(0, 0, 0, 0.4);
+  --shadow-md: 0 4px 12px -2px rgba(0, 0, 0, 0.45);
+  --shadow-lg: 0 16px 36px -6px rgba(0, 0, 0, 0.6);
+
+  /* Transitions */
+  --transition-fast: 150ms cubic-bezier(0.16, 1, 0.3, 1);
+  --transition-base: 220ms cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+:root[data-theme="light"] {
+  color-scheme: light;
+
+  /* Light Theme Palette (Slate White) */
+  --color-canvas: #f0f2f5;
+  --color-surface-subtle: #e8ebf0;
+  --color-surface: #ffffff;
+  --color-surface-raised: #ffffff;
+  --color-surface-overlay: #e2e6eb;
+  --color-surface-sunken: #e2e6eb;
+
+  --color-border-subtle: rgba(0, 0, 0, 0.05);
+  --color-border: rgba(0, 0, 0, 0.09);
+  --color-border-strong: rgba(0, 0, 0, 0.16);
+
+  --color-text-primary: #0d1117;
+  --color-text-secondary: #57606a;
+  --color-text-muted: #8c959f;
+
+  /* Accessible Hyper Cyan / Sky Blue for Light Background (WCAG AA compliant) */
+  --color-accent: #0284c7;
+  --color-accent-hover: #0369a1;
+  --color-accent-active: #075985;
+  --color-accent-soft: rgba(2, 132, 199, 0.10);
+  --color-accent-border: rgba(2, 132, 199, 0.32);
+  --color-accent-glow: rgba(2, 132, 199, 0.12);
+  --color-accent-foreground: #ffffff;
+
+  /* Semantic Tones (Light) */
+  --color-danger: #dc2626;
+  --color-danger-soft: rgba(220, 38, 38, 0.08);
+  --color-danger-border: rgba(220, 38, 38, 0.25);
+  --color-success: #059669;
+  --color-success-soft: rgba(5, 150, 105, 0.08);
+  --color-warning: #b45309;
+  --color-warning-soft: rgba(180, 83, 9, 0.08);
+  --color-info: #1d4ed8;
+  --color-info-soft: rgba(29, 78, 216, 0.08);
+
+  --shadow-sm: 0 1px 2px 0 rgba(0, 0, 0, 0.05);
+  --shadow-md: 0 4px 12px -2px rgba(0, 0, 0, 0.08);
+  --shadow-lg: 0 16px 36px -6px rgba(0, 0, 0, 0.12);
+}
+
+/* Global Focus-Visible Rule (Mandated by AGENTS.md 4.4 and 5) */
+:focus-visible {
+  outline: 2px solid var(--color-accent);
+  outline-offset: 2px;
+}
+
+/* Reduced Motion Support */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}

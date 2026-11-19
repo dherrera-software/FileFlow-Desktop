@@ -1,16 +1,20 @@
+//! Generación de documentos PDF nativos (texto, tablas, imágenes).
+
 use image::codecs::jpeg::JpegEncoder;
 use image::{DynamicImage, ExtendedColorType, ImageReader, Rgb, RgbImage};
-use lopdf::{dictionary, Document, Object, ObjectId, Stream};
+use lopdf::{Document, Object, ObjectId, Stream, dictionary};
 use std::io::Cursor;
 
-const PAGE_WIDTH: f32 = 595.28;
-const PAGE_HEIGHT: f32 = 841.89;
+pub const PAGE_WIDTH: f32 = 595.28;
+pub const PAGE_HEIGHT: f32 = 841.89;
 
 pub fn text_to_pdf(text: &str) -> Result<Vec<u8>, String> {
     let margin = 56.7_f32;
     let font_size = 11.0_f32;
     let line_height = 15.4_f32;
-    let max_lines = ((PAGE_HEIGHT - margin * 2.0) / line_height).floor().max(1.0) as usize;
+    let max_lines = ((PAGE_HEIGHT - margin * 2.0) / line_height)
+        .floor()
+        .max(1.0) as usize;
     let mut lines = Vec::new();
     for line in text.replace("\r\n", "\n").replace('\r', "\n").split('\n') {
         lines.extend(wrap_text(line, 86));
@@ -18,7 +22,10 @@ pub fn text_to_pdf(text: &str) -> Result<Vec<u8>, String> {
     if lines.is_empty() {
         lines.push(String::new());
     }
-    let pages = lines.chunks(max_lines).map(|chunk| chunk.to_vec()).collect::<Vec<_>>();
+    let pages = lines
+        .chunks(max_lines)
+        .map(|chunk| chunk.to_vec())
+        .collect::<Vec<_>>();
 
     let mut document = Document::with_version("1.4");
     let font_id = document.add_object(dictionary! {
@@ -68,14 +75,13 @@ pub fn image_to_pdf(bytes: &[u8]) -> Result<Vec<u8>, String> {
         .map_err(|_| "No se pudo preparar la imagen para el PDF.".to_string())?;
 
     let margin = 36.0_f32;
-    let scale = ((PAGE_WIDTH - margin * 2.0) / width as f32).min((PAGE_HEIGHT - margin * 2.0) / height as f32);
+    let scale = ((PAGE_WIDTH - margin * 2.0) / width as f32)
+        .min((PAGE_HEIGHT - margin * 2.0) / height as f32);
     let draw_width = width as f32 * scale;
     let draw_height = height as f32 * scale;
     let x = (PAGE_WIDTH - draw_width) / 2.0;
     let y = (PAGE_HEIGHT - draw_height) / 2.0;
-    let content = format!(
-        "q\n{draw_width:.2} 0 0 {draw_height:.2} {x:.2} {y:.2} cm\n/Im0 Do\nQ\n"
-    );
+    let content = format!("q\n{draw_width:.2} 0 0 {draw_height:.2} {x:.2} {y:.2} cm\n/Im0 Do\nQ\n");
 
     let mut document = Document::with_version("1.4");
     let image_id = document.add_object(Stream::new(
@@ -110,6 +116,148 @@ pub fn image_to_pdf(bytes: &[u8]) -> Result<Vec<u8>, String> {
     finish_document(&mut document, pages_id)
 }
 
+/// Genera un PDF con una tabla monoespaciada (una hoja de cálculo por página).
+pub fn table_to_pdf(rows: &[Vec<String>]) -> Result<Vec<u8>, String> {
+    if rows.is_empty() {
+        return text_to_pdf("(Hoja vacía)");
+    }
+    let columns = rows.iter().map(Vec::len).max().unwrap_or(1).max(1);
+    let max_characters = 118usize;
+    let mut widths = vec![8usize; columns];
+    for row in rows {
+        for (index, cell) in row.iter().enumerate() {
+            let length = cell.chars().count().clamp(1, 40);
+            widths[index] = widths[index].max(length);
+        }
+    }
+    let separators = 3 * columns.saturating_sub(1);
+    let total: usize = widths.iter().sum::<usize>() + separators;
+    if total > max_characters {
+        let available = max_characters.saturating_sub(separators).max(columns);
+        let sum: usize = widths.iter().sum();
+        let mut scaled = widths
+            .iter()
+            .map(|width| ((*width * available) / sum.max(1)).max(1))
+            .collect::<Vec<_>>();
+        let mut current: usize = scaled.iter().sum();
+        let mut index = 0;
+        while current < available {
+            scaled[index % columns] += 1;
+            current += 1;
+            index += 1;
+        }
+        widths = scaled;
+    }
+
+    let mut lines: Vec<String> = Vec::new();
+    for (row_index, row) in rows.iter().enumerate() {
+        let cells = (0..columns)
+            .map(|index| {
+                let value = row.get(index).map(String::as_str).unwrap_or("");
+                wrap_cell(value, widths[index])
+            })
+            .collect::<Vec<_>>();
+        let height = cells.iter().map(Vec::len).max().unwrap_or(1).max(1);
+        for line_index in 0..height {
+            let line = cells
+                .iter()
+                .enumerate()
+                .map(|(index, cell)| {
+                    let value = cell.get(line_index).map(String::as_str).unwrap_or("");
+                    pad_cell(value, widths[index])
+                })
+                .collect::<Vec<_>>()
+                .join(" | ");
+            lines.push(line);
+        }
+        if row_index == 0 {
+            let separator = widths
+                .iter()
+                .map(|width| "-".repeat(*width))
+                .collect::<Vec<_>>()
+                .join("-+-");
+            lines.push(separator);
+        }
+    }
+
+    let font_size = 8.0_f32;
+    let line_height = 10.5_f32;
+    let margin = 28.0_f32;
+    let max_lines = ((PAGE_HEIGHT - margin * 2.0) / line_height)
+        .floor()
+        .max(1.0) as usize;
+
+    let mut document = Document::with_version("1.4");
+    let font_id = document.add_object(dictionary! {
+        "Type" => "Font",
+        "Subtype" => "Type1",
+        "BaseFont" => "Courier",
+        "Encoding" => "WinAnsiEncoding"
+    });
+    let mut page_ids = Vec::new();
+    for chunk in lines.chunks(max_lines) {
+        let mut content = Vec::new();
+        let origin_y = PAGE_HEIGHT - margin - font_size;
+        content.extend(
+            format!(
+                "BT\n/F1 {font_size:.0} Tf\n{line_height:.1} TL\n1 0 0 1 {margin:.2} {origin_y:.2} Tm\n"
+            )
+            .into_bytes(),
+        );
+        for line in chunk {
+            content.push(b'(');
+            content.extend(pdf_escape(&win_ansi_bytes(line)));
+            content.extend(b") Tj\nT*\n");
+        }
+        content.extend(b"ET\n");
+        let content_id = document.add_object(Stream::new(dictionary! {}, content));
+        let page_id = document.add_object(dictionary! {
+            "Type" => "Page",
+            "MediaBox" => media_box(),
+            "Resources" => dictionary! {
+                "Font" => dictionary! {
+                    "F1" => font_id
+                }
+            },
+            "Contents" => content_id
+        });
+        page_ids.push(page_id);
+    }
+    let pages_id = document.add_object(dictionary! {
+        "Type" => "Pages",
+        "Kids" => page_ids.into_iter().map(Object::Reference).collect::<Vec<_>>(),
+        "Count" => Object::Integer(0)
+    });
+    fix_page_tree(&mut document, pages_id);
+    finish_document(&mut document, pages_id)
+}
+
+fn wrap_cell(value: &str, width: usize) -> Vec<String> {
+    let mut lines = Vec::new();
+    for source_line in value.replace("\r\n", "\n").replace('\r', "\n").split('\n') {
+        let mut current = String::new();
+        for character in source_line.chars() {
+            if current.chars().count() >= width {
+                lines.push(std::mem::take(&mut current));
+            }
+            current.push(character);
+        }
+        lines.push(current);
+    }
+    if lines.is_empty() {
+        lines.push(String::new());
+    }
+    lines
+}
+
+fn pad_cell(value: &str, width: usize) -> String {
+    let mut output: String = value.chars().take(width).collect();
+    let padding = width.saturating_sub(output.chars().count());
+    output.push_str(&" ".repeat(padding));
+    output
+}
+
+#[cfg(test)]
 pub fn image_dimensions(bytes: &[u8]) -> Result<(u32, u32), String> {
     let image = decode_image(bytes)?;
     Ok((image.width(), image.height()))
@@ -135,8 +283,14 @@ fn decode_rgb(bytes: &[u8]) -> Result<(RgbImage, u32, u32), String> {
         let mut rgb = RgbImage::new(width, height);
         for (x, y, pixel) in rgba.enumerate_pixels() {
             let alpha = pixel[3] as f32 / 255.0;
-            let blend = |channel: u8| -> u8 { (channel as f32 * alpha + 255.0 * (1.0 - alpha)).round() as u8 };
-            rgb.put_pixel(x, y, Rgb([blend(pixel[0]), blend(pixel[1]), blend(pixel[2])]));
+            let blend = |channel: u8| -> u8 {
+                (channel as f32 * alpha + 255.0 * (1.0 - alpha)).round() as u8
+            };
+            rgb.put_pixel(
+                x,
+                y,
+                Rgb([blend(pixel[0]), blend(pixel[1]), blend(pixel[2])]),
+            );
         }
         rgb
     } else {
@@ -302,30 +456,4 @@ fn pdf_escape(bytes: &[u8]) -> Vec<u8> {
         output.push(*byte);
     }
     output
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use image::ImageEncoder;
-
-    #[test]
-    fn text_pdf_stores_spanish_as_winansi_bytes() {
-        let pdf = text_to_pdf("cañón (sur)").unwrap();
-        assert!(pdf.starts_with(b"%PDF"));
-        assert!(pdf.windows(6).any(|window| window == b"ca\xf1\xf3n "));
-        assert!(pdf.windows(7).any(|window| window == br"\(sur\)"));
-    }
-
-    #[test]
-    fn png_becomes_a_pdf() {
-        let mut bytes = Vec::new();
-        let image = RgbImage::from_pixel(2, 2, Rgb([12, 80, 140]));
-        image::codecs::png::PngEncoder::new(&mut bytes)
-            .write_image(image.as_raw(), 2, 2, ExtendedColorType::Rgb8)
-            .unwrap();
-        let pdf = image_to_pdf(&bytes).unwrap();
-        assert!(pdf.starts_with(b"%PDF"));
-        assert!(image_dimensions(&bytes).unwrap() == (2, 2));
-    }
 }

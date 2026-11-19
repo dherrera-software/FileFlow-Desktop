@@ -37,7 +37,11 @@ fn walk_node(node: ego_tree::NodeRef<'_, Node>) -> String {
             if matches!(tag, "script" | "style" | "noscript" | "template") {
                 return String::new();
             }
-            walk_element(ElementRef::wrap(node).expect("element node"), tag)
+            if let Some(element) = ElementRef::wrap(node) {
+                walk_element(element, tag)
+            } else {
+                String::new()
+            }
         }
         _ => String::new(),
     }
@@ -134,7 +138,10 @@ fn table_to_markdown(element: ElementRef<'_>) -> String {
     };
     let head = normalize(&rows[0]);
     let separator = vec!["---".to_string(); width];
-    let mut lines = vec![format!("| {} |", head.join(" | ")), format!("| {} |", separator.join(" | "))];
+    let mut lines = vec![
+        format!("| {} |", head.join(" | ")),
+        format!("| {} |", separator.join(" | ")),
+    ];
     for row in rows.iter().skip(1) {
         lines.push(format!("| {} |", normalize(row).join(" | ")));
     }
@@ -142,10 +149,7 @@ fn table_to_markdown(element: ElementRef<'_>) -> String {
 }
 
 fn plain_text(element: ElementRef<'_>) -> String {
-    element
-        .text()
-        .collect::<Vec<_>>()
-        .join("")
+    element.text().collect::<Vec<_>>().join("")
 }
 
 fn collapse_inline_space(value: &str) -> String {

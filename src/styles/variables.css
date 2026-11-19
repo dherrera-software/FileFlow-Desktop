@@ -1,27 +1,34 @@
+@import "./tokens.css";
+
 :root {
-  color-scheme: dark;
-  --bg: #09090b;
-  --surface: #111113;
-  --surface-raised: #18181b;
-  --surface-sunken: #0c0c0e;
-  --line: #27272a;
-  --line-strong: #3f3f46;
-  --ink: #fafafa;
-  --ink-muted: #a1a1aa;
-  --ink-faint: #71717a;
-  --accent: #6366f1;
-  --accent-strong: #818cf8;
-  --accent-soft: rgb(99 102 241 / 14%);
-  --accent-line: rgb(99 102 241 / 45%);
-  --accent-on: #ffffff;
-  --danger: #f87171;
-  --danger-soft: rgb(248 113 113 / 12%);
-  --success: #4ade80;
-  --success-soft: rgb(74 222 128 / 12%);
-  --shadow: 0 24px 60px -36px rgb(0 0 0 / 80%);
-  --font-ui: Inter, "Segoe UI", sans-serif;
-  --font-mono: "JetBrains Mono", "Cascadia Code", ui-monospace, monospace;
-  --radius: 14px;
+  /* Legacy bridge mapped to strict design tokens */
+  --bg: var(--color-canvas);
+  --surface: var(--color-surface);
+  --surface-raised: var(--color-surface-raised);
+  --surface-sunken: var(--color-surface-subtle);
+  --line: var(--color-border);
+  --line-strong: var(--color-border-strong);
+  --ink: var(--color-text-primary);
+  --ink-muted: var(--color-text-secondary);
+  --ink-faint: var(--color-text-muted);
+
+  /* Lime Accent (#c8f96b in Dark, #3b6605 in Light) */
+  --accent: var(--color-accent);
+  --accent-strong: var(--color-accent-hover);
+  --accent-soft: var(--color-accent-soft);
+  --accent-line: var(--color-accent-border);
+  --accent-on: var(--color-accent-foreground);
+
+  --danger: var(--color-danger);
+  --danger-soft: var(--color-danger-soft);
+  --success: var(--color-success);
+  --success-soft: var(--color-success-soft);
+  --shadow: var(--shadow-lg);
+
+  --font-ui: var(--font-ui);
+  --font-mono: var(--font-mono);
+
+  --radius: var(--radius-md);
   --space-1: 4px;
   --space-2: 8px;
   --space-3: 12px;
