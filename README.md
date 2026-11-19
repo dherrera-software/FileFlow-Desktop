@@ -8,8 +8,8 @@
 
 Conversor de archivos local, offline y sin cuentas — impulsado por Rust nativo dentro de una app de escritorio Tauri.
 
-[![Versión](https://img.shields.io/badge/versión-0.1.0-00e5ff?style=flat-square)](https://github.com/tu-usuario/fileflow-desktop/releases)
-[![Plataforma](https://img.shields.io/badge/plataforma-Windows-0078d4?style=flat-square&logo=windows)](https://github.com/tu-usuario/fileflow-desktop/releases)
+[![Versión](https://img.shields.io/badge/versión-0.1.0-00e5ff?style=flat-square)](https://github.com/dherrera-software/fileflow-desktop/releases)
+[![Plataforma](https://img.shields.io/badge/plataforma-Windows-0078d4?style=flat-square&logo=windows)](https://github.com/dherrera-software/fileflow-desktop/releases)
 [![Licencia](https://img.shields.io/badge/licencia-MIT-green?style=flat-square)](LICENSE)
 [![Rust](https://img.shields.io/badge/Rust-1.80+-orange?style=flat-square&logo=rust)](https://www.rust-lang.org/)
 [![Tauri](https://img.shields.io/badge/Tauri-2-24c8db?style=flat-square&logo=tauri)](https://tauri.app/)
@@ -36,7 +36,7 @@ FileFlow Desktop es una aplicación nativa para Windows que convierte documentos
 | `FileFlow-Setup.exe` | **Instalador recomendado** — instala la app con accesos directos | ~3.5 MB |
 | `FileFlow.exe` | **Portable** — ejecuta sin instalación, llévalo en un USB | ~10.7 MB |
 
-> Los instaladores están disponibles en [Releases](https://github.com/tu-usuario/fileflow-desktop/releases).
+> Los instaladores están disponibles en [Releases](https://github.com/dherrera-software/fileflow-desktop/releases).
 
 ---
 
