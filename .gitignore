@@ -41,6 +41,11 @@ desktop.ini
 *.sln
 *.sw?
 
+# ── Archivos internos de desarrollo (no relevantes para el repo) ──
+AGENTS.md
+DEV_LOG.md
+TODO.md
+
 # ── Misc ─────────────────────────────────────────────────────
 *.log
 *.local
