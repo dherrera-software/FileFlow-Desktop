@@ -33,8 +33,8 @@ FileFlow Desktop es una aplicación nativa para Windows que convierte documentos
 
 | Archivo | Descripción | Tamaño |
 |---|---|---|
-| `FileFlow-Setup.exe` | **Instalador recomendado** — instala la app con accesos directos | ~3.5 MB |
-| `FileFlow.exe` | **Portable** — ejecuta sin instalación, llévalo en un USB | ~10.7 MB |
+| `FileFlow-Setup.exe` | **Instalador recomendado** — instala la app con accesos directos | ~3.8 MB |
+| `FileFlow.exe` | **Portable** — ejecuta sin instalación, llévalo en un USB | ~11.4 MB |
 
 > Los instaladores están disponibles en [Releases](https://github.com/dherrera-software/fileflow-desktop/releases).
 
@@ -85,7 +85,7 @@ Si una herramienta no está instalada, las rutas que dependen de ella no aparece
 ### Instalación
 
 ```bash
-git clone https://github.com/tu-usuario/fileflow-desktop.git
+git clone https://github.com/dherrera-software/fileflow-desktop.git
 cd fileflow-desktop
 pnpm install
 ```
@@ -173,4 +173,4 @@ FileFlow Desktop no incluye ningún tipo de telemetría, rastreo ni llamada de r
 
 ## Licencia
 
-MIT © 2024 — FileFlow Desktop
+MIT © 2026 — FileFlow Desktop

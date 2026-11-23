@@ -5,7 +5,7 @@ use std::io::{Cursor, Read, Write};
 use zip::write::SimpleFileOptions;
 use zip::{CompressionMethod, ZipArchive, ZipWriter};
 
-use super::super::{Block, BlockKind};
+use super::super::{Block, BlockKind, BlockStyle, Run};
 
 pub fn read_zip_entry(bytes: &[u8], name: &str, kind: &str) -> Result<Vec<u8>, String> {
     let mut archive = ZipArchive::new(Cursor::new(bytes))
@@ -72,21 +72,40 @@ pub fn xml_escape(value: &str) -> String {
         .replace('\'', "&apos;")
 }
 
+#[allow(dead_code)]
 pub fn push_block(blocks: &mut Vec<Block>, kind: BlockKind, text: &str) {
+    push_block_with_style(blocks, kind, text, BlockStyle::default());
+}
+
+pub fn push_block_with_style(
+    blocks: &mut Vec<Block>,
+    kind: BlockKind,
+    text: &str,
+    style: BlockStyle,
+) {
     let text = text.trim().to_string();
     if text.is_empty() {
         return;
     }
-    blocks.push(Block { kind, text });
+    blocks.push(Block {
+        kind,
+        text,
+        style,
+        runs: Vec::new(),
+    });
 }
 
-pub fn heading_level(value: &str) -> Option<u8> {
-    let lower = value.to_ascii_lowercase();
-    let digits = lower
-        .chars()
-        .filter(|character| character.is_ascii_digit())
-        .collect::<String>();
-    digits.parse::<u8>().ok()
+pub fn push_block_with_runs(
+    blocks: &mut Vec<Block>,
+    kind: BlockKind,
+    runs: Vec<Run>,
+    style: BlockStyle,
+) {
+    let block = Block::from_runs(kind, runs, style);
+    if block.text.trim().is_empty() {
+        return;
+    }
+    blocks.push(block);
 }
 
 pub fn attribute(start: &BytesStart<'_>, name: &str) -> Option<String> {

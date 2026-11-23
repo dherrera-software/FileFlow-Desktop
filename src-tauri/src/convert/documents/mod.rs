@@ -1,49 +1,19 @@
-//! Conversión de documentos. El modelo intermedio son bloques de texto con
-//! un tipo semántico básico, suficiente para conservar párrafos y encabezados
-//! entre TXT, Markdown, HTML, DOCX, ODT, RTF, EPUB y PDF.
+//! Conversión de documentos entre TXT, Markdown, HTML, DOCX, ODT, RTF, EPUB y PDF.
 
 pub mod markup;
 pub mod office;
 pub mod pdf;
+pub mod pdf_import;
 pub mod text;
 pub mod tts;
+pub mod types;
+
+pub use types::{Alignment, Block, BlockKind, BlockStyle, Run};
 
 use pulldown_cmark::{Event, Options, Parser, Tag, TagEnd};
 
 use crate::convert::sheets;
 use crate::convert::support;
-
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub enum BlockKind {
-    Paragraph,
-    Heading(u8),
-    ListItem,
-    Quote,
-    Code,
-}
-
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct Block {
-    pub kind: BlockKind,
-    pub text: String,
-}
-
-impl Block {
-    pub fn paragraph(text: impl Into<String>) -> Self {
-        Block {
-            kind: BlockKind::Paragraph,
-            text: text.into(),
-        }
-    }
-
-    #[cfg(test)]
-    pub fn heading(level: u8, text: impl Into<String>) -> Self {
-        Block {
-            kind: BlockKind::Heading(level.clamp(1, 6)),
-            text: text.into(),
-        }
-    }
-}
 
 pub fn convert(bytes: &[u8], source: &str, target: &str, title: &str) -> Result<Vec<u8>, String> {
     if source == "DOC" {
@@ -91,7 +61,7 @@ pub fn convert(bytes: &[u8], source: &str, target: &str, title: &str) -> Result<
         "ODT" => office::write_odt(&blocks, title),
         "RTF" => Ok(office::write_rtf(&blocks, title)),
         "EPUB" => office::write_epub(&blocks, title),
-        "PDF" => pdf::text_to_pdf(&blocks_to_text(&blocks)),
+        "PDF" => pdf::blocks_to_pdf(&blocks),
         _ => Err(format!(
             "La conversión de {source} a {target} no está disponible."
         )),
@@ -123,12 +93,8 @@ fn convert_legacy_doc(bytes: &[u8], target: &str) -> Result<Vec<u8>, String> {
     }
 }
 
-/// Extrae filas de un PDF de texto. Es una heurística deliberadamente
-/// conservadora: separa por tabulaciones, comas y dos o más espacios, igual
-/// que el backend web. No inventa celdas ni aplica OCR.
 fn pdf_table(bytes: &[u8], target: &str) -> Result<Vec<u8>, String> {
-    let blocks = read_pdf_text(bytes)?;
-    let text = blocks_to_text(&blocks);
+    let text = pdf_import::extract_pdf_raw_text(bytes)?;
     let rows = text
         .lines()
         .filter(|line| !line.trim().is_empty())
@@ -190,22 +156,9 @@ fn read_blocks(bytes: &[u8], source: &str) -> Result<Vec<Block>, String> {
         "ODT" => office::read_odt(bytes),
         "RTF" => office::read_rtf(bytes),
         "EPUB" => office::read_epub(bytes),
-        "PDF" => read_pdf_text(bytes),
+        "PDF" => pdf_import::read_pdf_text(bytes),
         _ => Err(format!("La conversión desde {source} no está disponible.")),
     }
-}
-
-fn read_pdf_text(bytes: &[u8]) -> Result<Vec<Block>, String> {
-    let text = pdf_extract::extract_text_from_mem(bytes).map_err(|_| {
-        "No se pudo leer el PDF. Puede estar dañado o protegido con contraseña.".to_string()
-    })?;
-    if text.trim().is_empty() {
-        return Err(
-            "El PDF no contiene texto seleccionable (posible escaneo). FileFlow no aplica OCR."
-                .to_string(),
-        );
-    }
-    Ok(plain_text_blocks(&text))
 }
 
 pub fn plain_text_blocks(text: &str) -> Vec<Block> {
@@ -274,6 +227,8 @@ pub fn markdown_to_blocks(markdown: &str) -> Vec<Block> {
                         blocks.push(Block {
                             kind: kind.clone(),
                             text,
+                            style: BlockStyle::default(),
+                            runs: Vec::new(),
                         });
                     }
                     current.clear();
@@ -288,6 +243,8 @@ pub fn markdown_to_blocks(markdown: &str) -> Vec<Block> {
                         blocks.push(Block {
                             kind: BlockKind::Quote,
                             text,
+                            style: BlockStyle::default(),
+                            runs: Vec::new(),
                         });
                     }
                     current.clear();
@@ -314,7 +271,15 @@ pub fn markdown_to_blocks(markdown: &str) -> Vec<Block> {
 pub fn blocks_to_text(blocks: &[Block]) -> String {
     let mut output = blocks
         .iter()
-        .map(|block| block.text.trim().to_string())
+        .map(|block| match &block.kind {
+            BlockKind::Table(rows) => rows
+                .iter()
+                .map(|r| r.join("\t"))
+                .collect::<Vec<_>>()
+                .join("\n"),
+            BlockKind::PageBreak => "\n---\n".to_string(),
+            _ => block.text.trim().to_string(),
+        })
         .filter(|text| !text.is_empty())
         .collect::<Vec<_>>()
         .join("\n\n");
@@ -322,93 +287,201 @@ pub fn blocks_to_text(blocks: &[Block]) -> String {
     output
 }
 
+fn run_to_markdown(run: &Run, base: &BlockStyle) -> String {
+    let mut out = run.text.clone();
+    if run.style.italic && !base.italic {
+        out = format!("*{out}*");
+    }
+    if run.style.bold && !base.bold {
+        out = format!("**{out}**");
+    }
+    out
+}
+
+fn runs_to_markdown(block: &Block) -> String {
+    block
+        .effective_runs()
+        .iter()
+        .map(|run| run_to_markdown(run, &block.style))
+        .collect::<String>()
+}
+
 pub fn blocks_to_markdown(blocks: &[Block]) -> String {
     let mut lines = Vec::new();
     for block in blocks {
-        match block.kind {
+        match &block.kind {
+            BlockKind::PageBreak => lines.push("---\n".to_string()),
+            BlockKind::Table(rows) => {
+                if !rows.is_empty() {
+                    let header = rows[0].join(" | ");
+                    let sep = rows[0]
+                        .iter()
+                        .map(|c| "-".repeat(c.len().max(3)))
+                        .collect::<Vec<_>>()
+                        .join(" | ");
+                    let mut tbl = vec![format!("| {header} |"), format!("| {sep} |")];
+                    for row in &rows[1..] {
+                        tbl.push(format!("| {} |", row.join(" | ")));
+                    }
+                    lines.push(tbl.join("\n"));
+                }
+            }
             BlockKind::Heading(level) => lines.push(format!(
                 "{} {}",
-                "#".repeat(level.clamp(1, 6) as usize),
-                block.text
+                "#".repeat((*level).clamp(1, 6) as usize),
+                runs_to_markdown(block)
             )),
-            BlockKind::ListItem => lines.push(format!("- {}", block.text.replace('\n', " "))),
+            BlockKind::ListItem => {
+                lines.push(format!("- {}", runs_to_markdown(block).replace('\n', " ")))
+            }
             BlockKind::Quote => lines.push(
-                block
-                    .text
+                runs_to_markdown(block)
                     .lines()
                     .map(|line| format!("> {line}"))
                     .collect::<Vec<_>>()
                     .join("\n"),
             ),
-            BlockKind::Code => lines.push(format!("```\n{}\n```", block.text)),
-            BlockKind::Paragraph => lines.push(block.text.clone()),
+            BlockKind::Code => lines.push(format!("```\n{}\n```", runs_to_markdown(block))),
+            BlockKind::Paragraph => lines.push(runs_to_markdown(block)),
         }
     }
     format!("{}\n", lines.join("\n\n"))
 }
 
+fn css_color(value: &str) -> Option<String> {
+    let hex = value.trim().trim_start_matches('#');
+    if hex.len() == 6 && hex.chars().all(|character| character.is_ascii_hexdigit()) {
+        Some(format!("#{hex}"))
+    } else {
+        None
+    }
+}
+
+fn text_style_parts(style: &BlockStyle) -> Vec<String> {
+    let mut parts = Vec::new();
+    if style.bold {
+        parts.push("font-weight:bold".to_string());
+    }
+    if style.italic {
+        parts.push("font-style:italic".to_string());
+    }
+    if style.underline {
+        parts.push("text-decoration:underline".to_string());
+    }
+    if let Some(size) = style.font_size {
+        let points = size as f32 / 2.0;
+        parts.push(format!("font-size:{points}pt"));
+    }
+    if let Some(color) = style.color.as_deref().and_then(css_color) {
+        parts.push(format!("color:{color}"));
+    }
+    if let Some(family) = &style.font_family {
+        parts.push(format!("font-family:'{}'", text::escape_html(family)));
+    }
+    parts
+}
+
+fn css_attr(parts: &[String]) -> String {
+    if parts.is_empty() {
+        String::new()
+    } else {
+        format!("style=\"{}\"", parts.join(";"))
+    }
+}
+
+fn style_to_css(style: &BlockStyle) -> String {
+    let mut parts = text_style_parts(style);
+    match style.align {
+        Alignment::Center => parts.push("text-align:center".to_string()),
+        Alignment::Right => parts.push("text-align:right".to_string()),
+        Alignment::Justify => parts.push("text-align:justify".to_string()),
+        Alignment::Left => {}
+    }
+    css_attr(&parts)
+}
+
+fn runs_to_html(block: &Block) -> String {
+    if block.runs.is_empty() {
+        return text::escape_html(&block.text).replace('\n', "<br>");
+    }
+    let mut output = String::new();
+    for run in &block.runs {
+        let content = text::escape_html(&run.text).replace('\n', "<br>");
+        let css = css_attr(&text_style_parts(&run.style));
+        if css.is_empty() {
+            output.push_str(&content);
+        } else {
+            output.push_str(&format!("<span {css}>{content}</span>"));
+        }
+    }
+    output
+}
+
 pub fn blocks_to_html_body(blocks: &[Block]) -> String {
     let mut body = String::new();
     for block in blocks {
-        let content = text::escape_html(&block.text).replace('\n', "<br>");
-        match block.kind {
-            BlockKind::Heading(level) => body.push_str(&format!(
-                "<h{level}>{content}</h{level}>\n",
-                level = level.clamp(1, 6)
-            )),
-            BlockKind::ListItem => body.push_str(&format!("<ul><li>{content}</li></ul>\n")),
-            BlockKind::Quote => body.push_str(&format!("<blockquote>{content}</blockquote>\n")),
+        let style_attr = style_to_css(&block.style);
+        let content = runs_to_html(block);
+        match &block.kind {
+            BlockKind::PageBreak => {
+                body.push_str("<hr class=\"page-break\" style=\"page-break-after:always;border:none;margin:2rem 0;border-top:1px dashed #ccc\"/>\n");
+            }
+            BlockKind::Table(rows) => {
+                body.push_str(
+                    "<table style=\"border-collapse:collapse;width:100%;margin:1rem 0;\">\n",
+                );
+                for (row_idx, row) in rows.iter().enumerate() {
+                    body.push_str("<tr>");
+                    let tag = if row_idx == 0 { "th" } else { "td" };
+                    for cell in row {
+                        body.push_str(&format!(
+                            "<{tag} style=\"border:1px solid #ccc;padding:0.4rem 0.6rem\">{}</{tag}>",
+                            text::escape_html(cell)
+                        ));
+                    }
+                    body.push_str("</tr>\n");
+                }
+                body.push_str("</table>\n");
+            }
+            BlockKind::Heading(level) => {
+                let lvl = (*level).clamp(1, 6);
+                if style_attr.is_empty() {
+                    body.push_str(&format!("<h{lvl}>{content}</h{lvl}>\n"));
+                } else {
+                    body.push_str(&format!("<h{lvl} {style_attr}>{content}</h{lvl}>\n"));
+                }
+            }
+            BlockKind::ListItem => {
+                if style_attr.is_empty() {
+                    body.push_str(&format!("<ul><li>{content}</li></ul>\n"));
+                } else {
+                    body.push_str(&format!("<ul><li {style_attr}>{content}</li></ul>\n"));
+                }
+            }
+            BlockKind::Quote => {
+                if style_attr.is_empty() {
+                    body.push_str(&format!("<blockquote>{content}</blockquote>\n"));
+                } else {
+                    body.push_str(&format!(
+                        "<blockquote {style_attr}>{content}</blockquote>\n"
+                    ));
+                }
+            }
             BlockKind::Code => body.push_str(&format!(
-                "<pre><code>{}</code></pre>\n",
+                "<pre><code {style_attr}>{}</code></pre>\n",
                 text::escape_html(&block.text)
             )),
-            BlockKind::Paragraph => body.push_str(&format!("<p>{content}</p>\n")),
+            BlockKind::Paragraph => {
+                if style_attr.is_empty() {
+                    body.push_str(&format!("<p>{content}</p>\n"));
+                } else {
+                    body.push_str(&format!("<p {style_attr}>{content}</p>\n"));
+                }
+            }
         }
     }
     body.trim().to_string()
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn markdown_blocks_keep_headings_and_lists() {
-        let blocks = markdown_to_blocks("# Título\n\nTexto **fuerte**\n\n- uno\n- dos\n");
-        assert!(
-            blocks
-                .iter()
-                .any(|block| block.kind == BlockKind::Heading(1))
-        );
-        assert!(blocks.iter().any(|block| block.text.contains("fuerte")));
-        assert_eq!(
-            blocks
-                .iter()
-                .filter(|block| block.kind == BlockKind::ListItem)
-                .count(),
-            2
-        );
-    }
-
-    #[test]
-    fn document_round_trip_docx_to_markdown() {
-        let source = "# Encabezado\n\nPrimer párrafo.\n\nSegundo párrafo.".as_bytes();
-        let docx = convert(source, "MD", "DOCX", "Doc").unwrap();
-        let markdown = convert(&docx, "DOCX", "MD", "Doc").unwrap();
-        let markdown = String::from_utf8(markdown).unwrap();
-        assert!(markdown.contains("# Encabezado"));
-        assert!(markdown.contains("Segundo párrafo."));
-    }
-
-    #[test]
-    fn pdf_output_starts_with_pdf_header() {
-        let pdf = convert(b"Hola mundo", "TXT", "PDF", "Nota").unwrap();
-        assert!(pdf.starts_with(b"%PDF"));
-    }
-
-    #[test]
-    fn corrupt_zip_is_rejected_with_a_clear_message() {
-        let error = convert(b"PK\x03\x04basura", "DOCX", "MD", "Doc").unwrap_err();
-        assert!(error.contains("dañado") || error.contains("ZIP"));
-    }
-}
+mod tests;

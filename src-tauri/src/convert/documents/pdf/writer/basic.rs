@@ -1,12 +1,12 @@
-//! Generación de documentos PDF nativos (texto, tablas, imágenes).
+//! Generadores de PDF básicos para texto plano, imágenes y tablas monoespaciadas.
 
 use image::codecs::jpeg::JpegEncoder;
 use image::{DynamicImage, ExtendedColorType, ImageReader, Rgb, RgbImage};
-use lopdf::{Document, Object, ObjectId, Stream, dictionary};
+use lopdf::{Document, Object, Stream, dictionary};
 use std::io::Cursor;
 
-pub const PAGE_WIDTH: f32 = 595.28;
-pub const PAGE_HEIGHT: f32 = 841.89;
+use super::blocks::{PAGE_HEIGHT, PAGE_WIDTH, finish_document, fix_page_tree, media_box};
+use super::encoding::{pdf_escape, win_ansi_bytes};
 
 pub fn text_to_pdf(text: &str) -> Result<Vec<u8>, String> {
     let margin = 56.7_f32;
@@ -116,7 +116,6 @@ pub fn image_to_pdf(bytes: &[u8]) -> Result<Vec<u8>, String> {
     finish_document(&mut document, pages_id)
 }
 
-/// Genera un PDF con una tabla monoespaciada (una hoja de cálculo por página).
 pub fn table_to_pdf(rows: &[Vec<String>]) -> Result<Vec<u8>, String> {
     if rows.is_empty() {
         return text_to_pdf("(Hoja vacía)");
@@ -313,53 +312,6 @@ fn decode_image(bytes: &[u8]) -> Result<DynamicImage, String> {
         .map_err(|_| "La imagen es demasiado grande o no se pudo leer.".to_string())
 }
 
-fn media_box() -> Vec<Object> {
-    vec![
-        Object::Integer(0),
-        Object::Integer(0),
-        Object::Real(PAGE_WIDTH),
-        Object::Real(PAGE_HEIGHT),
-    ]
-}
-
-fn fix_page_tree(document: &mut Document, pages_id: ObjectId) {
-    let page_ids = match document.get_object(pages_id) {
-        Ok(Object::Dictionary(dict)) => match dict.get(b"Kids").ok() {
-            Some(Object::Array(kids)) => kids
-                .iter()
-                .filter_map(|kid| match kid {
-                    Object::Reference(id) => Some(*id),
-                    _ => None,
-                })
-                .collect::<Vec<_>>(),
-            _ => Vec::new(),
-        },
-        _ => Vec::new(),
-    };
-    if let Ok(Object::Dictionary(dict)) = document.get_object_mut(pages_id) {
-        dict.set("Count", Object::Integer(page_ids.len() as i64));
-    }
-    for page_id in page_ids {
-        if let Ok(Object::Dictionary(dict)) = document.get_object_mut(page_id) {
-            dict.set("Parent", Object::Reference(pages_id));
-            dict.set("Type", Object::Name(b"Page".to_vec()));
-        }
-    }
-}
-
-fn finish_document(document: &mut Document, pages_id: ObjectId) -> Result<Vec<u8>, String> {
-    let catalog_id = document.add_object(dictionary! {
-        "Type" => "Catalog",
-        "Pages" => pages_id
-    });
-    document.trailer.set("Root", Object::Reference(catalog_id));
-    let mut output = Vec::new();
-    document
-        .save_to(&mut output)
-        .map_err(|_| "No se pudo generar el PDF.".to_string())?;
-    Ok(output)
-}
-
 fn wrap_text(line: &str, max_characters: usize) -> Vec<String> {
     if line.is_empty() {
         return vec![String::new()];
@@ -396,64 +348,4 @@ fn wrap_text(line: &str, max_characters: usize) -> Vec<String> {
     } else {
         output
     }
-}
-
-fn win_ansi_bytes(value: &str) -> Vec<u8> {
-    value
-        .chars()
-        .map(|character| {
-            let code = character as u32;
-            if code == 9 || code < 0x20 {
-                b' '
-            } else if code <= 0xff {
-                code as u8
-            } else {
-                win_ansi_extra(code).unwrap_or(b'?')
-            }
-        })
-        .collect()
-}
-
-fn win_ansi_extra(code: u32) -> Option<u8> {
-    Some(match code {
-        0x20ac => 0x80,
-        0x201a => 0x82,
-        0x0192 => 0x83,
-        0x201e => 0x84,
-        0x2026 => 0x85,
-        0x2020 => 0x86,
-        0x2021 => 0x87,
-        0x02c6 => 0x88,
-        0x2030 => 0x89,
-        0x0160 => 0x8a,
-        0x2039 => 0x8b,
-        0x0152 => 0x8c,
-        0x017d => 0x8e,
-        0x2018 => 0x91,
-        0x2019 => 0x92,
-        0x201c => 0x93,
-        0x201d => 0x94,
-        0x2022 => 0x95,
-        0x2013 => 0x96,
-        0x2014 => 0x97,
-        0x02dc => 0x98,
-        0x2122 => 0x99,
-        0x0161 => 0x9a,
-        0x203a => 0x9b,
-        0x0153 => 0x9c,
-        0x017e => 0x9e,
-        0x0178 => 0x9f,
-        _ => return None,
-    })
-}
-
-fn pdf_escape(bytes: &[u8]) -> Vec<u8> {
-    let mut output = Vec::new();
-    for byte in bytes {
-        if matches!(byte, b'\\' | b'(' | b')') {
-            output.push(b'\\');
-        }
-        output.push(*byte);
-    }
-    output
 }
